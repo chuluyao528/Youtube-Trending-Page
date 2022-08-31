@@ -1,0 +1,190 @@
+#Part 1
+#We are scraping Youtube's trending page for the most current trends uploaded. We are using Beautiful Soup to parse the appropriate classes on the webpage and finding their locations. A total of three lists are used to append each one for total video views, uploader name, and the title of the video. In the view list, we want to locate the total viewers by finding a specific class after parsing the data. In the name list, we are appending the youtuber's class. In the title list, a loop is used to collect the total number of videos presented on the webpage.
+
+import numpy as np
+import pandas as pd
+from pandas import DataFrame, Series
+from bs4 import BeautifulSoup
+import csv
+import requests
+import re
+
+#Parsing data
+response = requests.get('https://www.youtube.com/feed/trending').text
+soup = BeautifulSoup(response,'lxml')
+title = soup.findAll(class_='yt-uix-tile-link yt-ui-ellipsis yt-ui-ellipsis-2 yt-uix-sessionlink spf-link')
+totalli = soup.findAll(True,{"class":"yt-lockup-meta"})
+totaltubs = soup.findAll(True,{"class":"yt-uix-sessionlink spf-link"})
+
+
+n=0
+listnum = 0
+viewlist = []
+viewsnumlist = []
+
+#list for Views
+for li in totalli:
+    for view in li.findAll('li'):
+        views1 = view.get_text()
+        if 'ago' in views1:
+            continue
+        else:
+            viewlist.append(views1)  
+            
+#Convert views to number format for Pandas operations 
+num = [re.findall(r'\d+',i.replace(',','')) for i in viewlist]
+
+for viewnum in num:
+    for viewnum2 in viewnum:
+        viewsnum = int(viewnum2)
+        viewsnumlist.append(viewsnum) 
+        
+#List for Time when Video uploaded
+videotimelist = []
+for li in totalli:
+    for time in li.findAll('li'):
+        video = time.get_text()
+        if 'views' in video:
+            continue
+        else:
+            videotimelist.append(video)
+
+            
+#list for Youtuber name
+name = []
+for items in totaltubs:
+    youtuber = items.get_text().replace('\n','')
+    name.append(youtuber)
+del name[::2]
+
+print('{:^60}\n-------------------------------------------------------------------'.format('Current Trends on Youtube'))
+
+#List for Video title 
+titlelist = []
+for i in title:
+    if i.get('title') is None:
+        continue
+    else:
+        title2 = i.get_text()
+        titlelist.append(title2)
+        
+#List for Video duration
+video_time = []
+time = soup.find_all('span',class_='video-time')
+for minutes in time:
+    get_time = minutes.get_text()
+    video_time.append(get_time)
+    
+
+#Loop when Video title length is not the same as Youtuber name and View length 
+if len(titlelist) != len(name) and len(titlelist) != len(viewlist) and len(titlelist)!=len(video_time) and len(titlelist)!=len(viewsnumlist) and len(titlelist)!= len(videotimelist):
+    del viewlist[4:10], name[4:10], video_time[4:10], videotimelist[4:10], viewsnumlist[4:10], titlelist[3:4]
+    
+for i in range(len(name)):
+        n+=1
+        print(n,titlelist[listnum],'\n',
+              'Youtuber:',name[listnum],'----- video views:', viewlist[listnum],'\n')
+       
+        listnum+=1
+        
+#Part 2
+#After scraping data for video title, views, and Youtuber and creating a DataFrame, we decided to merge addition information from the website. Video duration, description, and time for when it was uploaded was scraped. This data are then appended to a list respectively. After, a second DataFrame was created from these lists. This new DataFrame is then merged with the first one to diplay the appropriate results. A sort values capability is used to set Youtubers as the index while arranging views from the highest to lowest.
+
+#Renamed first column; Added 2 more columns (video title, views)
+df = pd.DataFrame(name)
+df.columns = ['Youtuber']
+df['Video'] = titlelist
+df['Views'] = viewsnumlist
+
+#Created a second Dataframe (duration, time uploaded)
+df2 = pd.DataFrame(titlelist)
+df2.columns = ['Video']
+df2['Duration'] = video_time
+df2['Uploaded'] = videotimelist
+  
+#Merged both Datframes together
+merge = pd.merge(df,df2)
+merge.head()
+
+#Sort Video by Youtuber; eliminates duplicates
+df3 = merge.sort_values(by='Youtuber')
+df3.set_index(['Youtuber','Video'],drop=True)
+df3.head()
+
+#Sorted views in ascending order
+df3 = merge.sort_values(['Views','Youtuber'],ascending=False)
+df3.set_index(['Youtuber','Video'],drop=True)
+df3.head()
+
+#Part 3
+#From the sorted dataframe after merging, we imported the data to a excel spreadsheet, eliminating any rows with 'Stream' contained in it. An option for user to search for videos based on uploaded time is included after reading the spreadsheet. After the search, a newly dataframe containing the same columns will appear based on the user's input setting.
+
+#Takes out row if string contains 'Stream'
+def import_excel():
+    df3.to_excel("Youtube Trend.xlsx",sheet_name="Youtube Trending",index=False)
+    df = pd.read_excel("Youtube Trend.xlsx","Youtube Trending")
+    df = df[~df.Uploaded.str.contains("Stream")]
+    df.to_excel("Youtube Trend.xlsx",sheet_name="Youtube Trending",index=False)
+import_excel()
+
+#Applied an input option for user to find time of videos uplaoded
+
+df = pd.read_excel("Youtube Trend.xlsx","Youtube Trending")
+
+user_input = int(float(input('Enter:\n1. Find videos uploaded less than 24 hours\n2. Find videos uploaded less then one week\n3. Find all videos uploaded\n')))
+
+if user_input == 1:
+    user_input = 'hours'
+elif user_input == 2:
+    user_input = 'day'
+else:
+    user_input=''
+
+display = df[df.Uploaded.str.contains(user_input)]
+display.head()
+
+#Part 4
+#Added a groupby function to group Videos through it's Views and Youtuber. The ascending numbers for Views is applied in part 4. This groupby function sorts the Views from the lowest views on top to highest at bottom.A pivot table is created through the desired index columns and Views as the value considering the data type is in int 64.
+
+#Grouped videos by Views and Youtuber
+df3.groupby(["Views","Youtuber"])["Video"].min().head(10)
+
+#Pivot talbe for Views with indexes are Youtuber and Video
+pd.pivot_table(data=df3, index=["Youtuber","Video"],values="Views",dropna=True, fill_value=0).head(10)
+
+#Part 5
+#Here, Video duration is converted to an integer in order to function properly while utilizing a dataframe and plotting. After the covnersion, a new dataframe is created to append the newly formed Video duration dtype. A line graph is then created to compare the corrrelation between Video Views and Duration. The Y-axis shows the views in increments of 10 million, while the X-axis displays the video duration. The legend is located top right, indicating the color line for Views.
+
+from datetime import datetime
+import matplotlib.ticker as ticker
+import matplotlib.pyplot as plt
+videoduration = []
+#convert the strings to numbers
+for duration in video_time:
+    try:
+        durtime = datetime.strptime(duration, '%M:%S')
+    except:
+        durtime = datetime.strptime(duration, '%H:%M:%S')
+    min_ = round(durtime.hour*60 + durtime.minute*1 + durtime.second/60)
+    videoduration.append(min_)
+
+graph1 = pd.DataFrame(name)
+graph1.columns = ['Youtuber']
+graph1['Video'] = titlelist
+graph1['Views'] = viewsnumlist
+graph1['Duration(mins)'] = videoduration
+sortg = graph1.sort_values(by='Duration(mins)')
+
+ax = sortg.plot(x= 'Duration(mins)',y='Views',kind='line')
+start, end = ax.set_xlim(0)
+ax.xaxis.set_ticks(np.arange(start,end,10))
+ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%0.1f'))
+ax.set_xlabel("Video Duration in minutes")
+ax.set_ylabel("Views # in milion")
+ax.legend(["# of Views"])
+plt.rcParams['figure.figsize']= (40,20)
+plt.rcParams.update({'font.size': 30})
+fig = ax.get_figure()
+fig.savefig('Views vs Duration.jpg')
+plt.show()
+
